@@ -77,10 +77,11 @@ def generate_html(report_data, output_file):
 
 # Updated scan functions
 def scan_nikto(url):
-    return run_command(["nikto", "-h", url])
+    return run_command(["nikto", "-h", url, "-maxtime", "10m"])
 
 def scan_nmap(url):
-    return run_command(["nmap", "-p", "80,443", "-T4", "-sV", "--script", "vuln", url])
+    hostname = url.replace("http://", "").replace("https://", "").split("/")[0]
+    return run_command(["nmap", "-p", "80,443", "-T4", "-sV", "--script", "vuln", hostname])
 
 def scan_sqlmap(url):
     return run_command(["sqlmap", "-u", f"{url}/artists.php?artist=1", "--batch", "--crawl=3", "--threads=10", "--timeout=15", "--retries=1"])
@@ -91,12 +92,14 @@ def scan_gobuster(url):
 
 def scan_zap(url):
     try:
-        subprocess.run(["zap-cli", "start", "--start-options", "-config api.disablekey=true"], check=True)
+        subprocess.run(["zap-cli", "start", "--start-options", "-config", "api.disablekey=true"], check=True)
         subprocess.run(["zap-cli", "open-url", url], check=True)
         subprocess.run(["zap-cli", "spider", url], check=True)
         subprocess.run(["zap-cli", "active-scan", url], check=True)
         subprocess.run(["sleep", "10"])  # Give it some time
         return run_command(["zap-cli", "alerts"])
+    except FileNotFoundError:
+        return "ZAP scan failed: 'zap-cli' not found. Please install it with `pip install python-owasp-zap-v2.4` or ensure it is in your PATH."
     except Exception as e:
         return f"ZAP scan failed: {str(e)}"
 
