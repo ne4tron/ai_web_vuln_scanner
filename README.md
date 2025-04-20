@@ -20,5 +20,5 @@ The tool provides detailed reports in both **PDF** and **HTML** formats, includi
 Clone this repository to your local machine:
 
 ```bash
-git clone https://github.com/NE4TRON/ai-web-vuln-scanner.git
-cd ai-web-vuln-scanner
+git clone https://github.com/NE4TRON/ai_web_vuln_scanner.git
+cd ai_web_vuln_scanner
