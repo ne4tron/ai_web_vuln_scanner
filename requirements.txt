@@ -7,3 +7,6 @@ for SQLmap
 sudo apt-get install sqlmap
 for gobuster
 sudo apt-get install gobuster
+for owasp zap
+sudo apt install zaproxy
+pip install python-owasp-zap-v2.4 zap-cli
