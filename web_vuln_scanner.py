@@ -27,6 +27,11 @@ def get_recommendations(tool, output):
         ],
         "Gobuster": [
             ("Hidden directories found", "Restrict access to sensitive directories with proper authentication or firewalls."),
+        ],
+        "OWASP ZAP": [
+            ("XSS", "Sanitize user input and use Content Security Policy (CSP)."),
+            ("SQL Injection", "Use parameterized queries to prevent SQL injection."),
+            ("Insecure HTTP", "Redirect to HTTPS and use secure headers."),
         ]
     }
 
@@ -37,7 +42,7 @@ def get_recommendations(tool, output):
     
     return "\n".join(recommendations_found) if recommendations_found else "No specific recommendations available."
 
-# Function to generate PDF report
+# Report generation
 def generate_pdf(report_data, output_file):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -54,7 +59,6 @@ def generate_pdf(report_data, output_file):
     
     pdf.output(output_file)
 
-# Function to generate HTML report
 def generate_html(report_data, output_file):
     with open(output_file, 'w') as f:
         f.write("<html><body>")
@@ -66,22 +70,29 @@ def generate_html(report_data, output_file):
         
         f.write("</body></html>")
 
-# Scanner functions with speed optimizations
+# Speed-optimized scan functions
 def scan_nikto(url):
-    command = ["nikto", "-h", url]
-    return run_command(command)
+    return run_command(["nikto", "-h", url, "-Tuning", "x", "-Plugins", "ALL", "-nointeractive"])
 
 def scan_nmap(url):
-    command = ["nmap", "-T4", "-sV", "--min-rate", "1000", url]
-    return run_command(command)
+    return run_command(["nmap", "-T4", "-sV", "--min-rate", "1000", url])
 
 def scan_sqlmap(url):
-    command = ["sqlmap", "-u", url, "--batch", "--crawl=1"]
-    return run_command(command)
+    return run_command(["sqlmap", "-u", url, "--batch", "--crawl=1", "--threads=10", "--timeout=10", "--retries=1"])
 
 def scan_gobuster(url):
-    command = ["gobuster", "dir", "-u", url, "-w", "/usr/share/wordlists/dirb/common.txt", "-t", "50"]
-    return run_command(command)
+    return run_command(["gobuster", "dir", "-u", url, "-w", "/usr/share/wordlists/dirb/common.txt", "-t", "50", "-q"])
+
+def scan_zap(url):
+    try:
+        subprocess.run(["zap-cli", "start", "--start-options", "-config api.disablekey=true"], check=True)
+        subprocess.run(["zap-cli", "open-url", url], check=True)
+        subprocess.run(["zap-cli", "spider", url], check=True)
+        subprocess.run(["zap-cli", "active-scan", url], check=True)
+        output = run_command(["zap-cli", "alerts"])
+        return output
+    except Exception as e:
+        return f"ZAP scan failed: {str(e)}"
 
 # Main function
 def main():
@@ -96,27 +107,21 @@ def main():
     report_format = args.format
     report_data = {}
 
-    print(f"Starting vulnerability scan for {url}...")
+    print(f"[+] Starting vulnerability scan for {url}...")
 
-    # Run scans concurrently
     with ThreadPoolExecutor() as executor:
-        future_nikto = executor.submit(scan_nikto, url)
-        future_nmap = executor.submit(scan_nmap, url)
-        future_sqlmap = executor.submit(scan_sqlmap, url)
-        future_gobuster = executor.submit(scan_gobuster, url)
+        futures = {
+            "Nikto": executor.submit(scan_nikto, url),
+            "Nmap": executor.submit(scan_nmap, url),
+            "SQLMap": executor.submit(scan_sqlmap, url),
+            "Gobuster": executor.submit(scan_gobuster, url),
+            "OWASP ZAP": executor.submit(scan_zap, url),
+        }
 
-        nikto_output = future_nikto.result()
-        nmap_output = future_nmap.result()
-        sqlmap_output = future_sqlmap.result()
-        gobuster_output = future_gobuster.result()
+        for tool, future in futures.items():
+            output = future.result()
+            report_data[tool] = output + "\n\nRecommendations:\n" + get_recommendations(tool, output)
 
-    # Compile report data
-    report_data["Nikto"] = nikto_output + "\n\nRecommendations:\n" + get_recommendations("Nikto", nikto_output)
-    report_data["Nmap"] = nmap_output + "\n\nRecommendations:\n" + get_recommendations("Nmap", nmap_output)
-    report_data["SQLMap"] = sqlmap_output + "\n\nRecommendations:\n" + get_recommendations("SQLMap", sqlmap_output)
-    report_data["Gobuster"] = gobuster_output + "\n\nRecommendations:\n" + get_recommendations("Gobuster", gobuster_output)
-
-    # Generate report
     if report_format == "pdf":
         output_file += ".pdf"
         generate_pdf(report_data, output_file)
@@ -124,7 +129,7 @@ def main():
         output_file += ".html"
         generate_html(report_data, output_file)
     
-    print(f"Scan completed. Report saved to: {output_file}")
+    print(f"[+] Scan completed. Report saved to: {output_file}")
 
 if __name__ == "__main__":
     main()
