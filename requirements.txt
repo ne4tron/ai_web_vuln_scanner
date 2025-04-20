@@ -1,0 +1,9 @@
+install requirements 
+for nikto
+sudo apt-get install nikto
+for Nmap
+sudo apt-get install nmap
+for SQLmap
+sudo apt-get install sqlmap
+for gobuster
+sudo apt-get install gobuster
