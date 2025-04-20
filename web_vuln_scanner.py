@@ -7,81 +7,87 @@ from concurrent.futures import ThreadPoolExecutor
 
 # Function to run a system command and capture output
 def run_command(command):
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return result.stdout.decode('utf-8') + "\n" + result.stderr.decode('utf-8')
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+        return result.stdout.decode('utf-8') + "\n" + result.stderr.decode('utf-8')
+    except subprocess.TimeoutExpired:
+        return f"Command {' '.join(command)} timed out."
 
 # Function to get recommendations based on scanner output
 def get_recommendations(tool, output):
-    recommendations = {
-        "Nikto": [
-            ("Outdated server software", "Upgrade the server software to the latest version."),
-            ("Potentially dangerous files exposed", "Ensure that sensitive files (e.g., backup files) are not exposed to the public."),
-            ("Directory listing enabled", "Disable directory listing to prevent attackers from viewing directory contents."),
-        ],
-        "Nmap": [
-            ("Open ports", "Close unnecessary ports and services to reduce attack surface."),
-            ("Old version of service detected", "Update the service to the latest version to patch known vulnerabilities."),
-        ],
-        "SQLMap": [
-            ("SQL Injection vulnerability", "Use prepared statements or parameterized queries to prevent SQL injection."),
-        ],
-        "Gobuster": [
-            ("Hidden directories found", "Restrict access to sensitive directories with proper authentication or firewalls."),
-        ],
-        "OWASP ZAP": [
-            ("XSS", "Sanitize user input and use Content Security Policy (CSP)."),
-            ("SQL Injection", "Use parameterized queries to prevent SQL injection."),
-            ("Insecure HTTP", "Redirect to HTTPS and use secure headers."),
-        ]
+    keywords = {
+        "Nikto": {
+            "outdated": "Upgrade the server software to the latest version.",
+            "exposed": "Ensure sensitive files are not publicly accessible.",
+            "directory listing": "Disable directory listing to prevent directory content exposure."
+        },
+        "Nmap": {
+            "open": "Close unnecessary open ports.",
+            "vulnerable": "Update the service to fix known vulnerabilities.",
+            "outdated": "Upgrade the detected outdated services."
+        },
+        "SQLMap": {
+            "injection": "Use parameterized queries to prevent SQL injection.",
+            "vulnerable": "Sanitize user inputs to mitigate SQLi risk."
+        },
+        "Gobuster": {
+            "Found:": "Restrict access to sensitive directories or files using proper authentication and firewalls."
+        },
+        "OWASP ZAP": {
+            "xss": "Sanitize user input and implement Content Security Policy (CSP).",
+            "sql": "Use parameterized queries and sanitize all inputs.",
+            "http": "Force HTTPS and use secure headers."
+        }
     }
 
-    recommendations_found = []
-    for issue, recommendation in recommendations.get(tool, []):
-        if issue.lower() in output.lower():
-            recommendations_found.append(f"{issue}: {recommendation}")
+    output_lower = output.lower()
+    recs = set()
+    for keyword, rec in keywords.get(tool, {}).items():
+        if keyword in output_lower:
+            recs.add(f"{keyword.title()}: {rec}")
     
-    return "\n".join(recommendations_found) if recommendations_found else "No specific recommendations available."
+    return "\n".join(recs) if recs else "No specific recommendations available."
 
-# Report generation
+# PDF report generation
 def generate_pdf(report_data, output_file):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    
+
     pdf.cell(200, 10, txt=f"Vulnerability Report - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align="C")
     pdf.ln(10)
-    
+
     for tool, data in report_data.items():
+        pdf.set_font("Arial", "B", 12)
         pdf.cell(200, 10, txt=f"Tool: {tool}", ln=True)
+        pdf.set_font("Arial", size=11)
         pdf.multi_cell(0, 10, txt=data)
         pdf.ln(5)
-    
+
     pdf.output(output_file)
 
 def generate_html(report_data, output_file):
     with open(output_file, 'w') as f:
         f.write("<html><body>")
         f.write(f"<h1>Vulnerability Report - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</h1>")
-        
         for tool, data in report_data.items():
-            f.write(f"<h2>Tool: {tool}</h2>")
-            f.write(f"<pre>{data}</pre>")
-        
+            f.write(f"<h2>Tool: {tool}</h2><pre>{data}</pre>")
         f.write("</body></html>")
 
-# Speed-optimized scan functions
+# Updated scan functions
 def scan_nikto(url):
-    return run_command(["nikto", "-h", url, "-Tuning", "x", "-Plugins", "ALL", "-nointeractive"])
+    return run_command(["nikto", "-h", url])
 
 def scan_nmap(url):
-    return run_command(["nmap", "-T4", "-sV", "--min-rate", "1000", url])
+    return run_command(["nmap", "-p", "80,443", "-T4", "-sV", "--script", "vuln", url])
 
 def scan_sqlmap(url):
-    return run_command(["sqlmap", "-u", url, "--batch", "--crawl=1", "--threads=10", "--timeout=10", "--retries=1"])
+    return run_command(["sqlmap", "-u", f"{url}/artists.php?artist=1", "--batch", "--crawl=3", "--threads=10", "--timeout=15", "--retries=1"])
 
 def scan_gobuster(url):
-    return run_command(["gobuster", "dir", "-u", url, "-w", "/usr/share/wordlists/dirb/common.txt", "-t", "50", "-q"])
+    wordlist = "/usr/share/wordlists/dirb/common.txt"
+    return run_command(["gobuster", "dir", "-u", url, "-w", wordlist, "-x", ".php,.bak,.txt", "-t", "50", "-q", "-e"])
 
 def scan_zap(url):
     try:
@@ -89,10 +95,16 @@ def scan_zap(url):
         subprocess.run(["zap-cli", "open-url", url], check=True)
         subprocess.run(["zap-cli", "spider", url], check=True)
         subprocess.run(["zap-cli", "active-scan", url], check=True)
-        output = run_command(["zap-cli", "alerts"])
-        return output
+        subprocess.run(["sleep", "10"])  # Give it some time
+        return run_command(["zap-cli", "alerts"])
     except Exception as e:
         return f"ZAP scan failed: {str(e)}"
+
+# Save raw tool output for inspection
+def save_raw_output(tool, output, base_name):
+    filename = f"{base_name}_{tool.lower().replace(' ', '_')}.txt"
+    with open(filename, 'w') as f:
+        f.write(output)
 
 # Main function
 def main():
@@ -101,8 +113,8 @@ def main():
     parser.add_argument('--output', default="report", help="Output file name (without extension)")
     parser.add_argument('--format', choices=["pdf", "html"], default="pdf", help="Report format (pdf/html)")
     args = parser.parse_args()
-    
-    url = args.url
+
+    url = args.url.rstrip("/")
     output_file = args.output
     report_format = args.format
     report_data = {}
@@ -120,6 +132,7 @@ def main():
 
         for tool, future in futures.items():
             output = future.result()
+            save_raw_output(tool, output, output_file)
             report_data[tool] = output + "\n\nRecommendations:\n" + get_recommendations(tool, output)
 
     if report_format == "pdf":
@@ -128,7 +141,7 @@ def main():
     else:
         output_file += ".html"
         generate_html(report_data, output_file)
-    
+
     print(f"[+] Scan completed. Report saved to: {output_file}")
 
 if __name__ == "__main__":
