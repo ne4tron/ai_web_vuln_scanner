@@ -3,6 +3,7 @@ from fpdf import FPDF
 from datetime import datetime
 import os
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 
 # Function to run a system command and capture output
 def run_command(command):
@@ -29,7 +30,6 @@ def get_recommendations(tool, output):
         ]
     }
 
-    # Search the output for common vulnerability keywords and return recommendations
     recommendations_found = []
     for issue, recommendation in recommendations.get(tool, []):
         if issue.lower() in output.lower():
@@ -66,24 +66,21 @@ def generate_html(report_data, output_file):
         
         f.write("</body></html>")
 
-# Function to scan with Nikto
+# Scanner functions with speed optimizations
 def scan_nikto(url):
     command = ["nikto", "-h", url]
     return run_command(command)
 
-# Function to scan with Nmap
 def scan_nmap(url):
-    command = ["nmap", "-sV", url]
+    command = ["nmap", "-T4", "-sV", "--min-rate", "1000", url]
     return run_command(command)
 
-# Function to scan with SQLMap
 def scan_sqlmap(url):
     command = ["sqlmap", "-u", url, "--batch", "--crawl=1"]
     return run_command(command)
 
-# Function to scan with Gobuster
 def scan_gobuster(url):
-    command = ["gobuster", "dir", "-u", url, "-w", "/usr/share/wordlists/dirb/common.txt"]
+    command = ["gobuster", "dir", "-u", url, "-w", "/usr/share/wordlists/dirb/common.txt", "-t", "50"]
     return run_command(command)
 
 # Main function
@@ -100,20 +97,26 @@ def main():
     report_data = {}
 
     print(f"Starting vulnerability scan for {url}...")
-    
-    # Run scans
-    nikto_output = scan_nikto(url)
-    nmap_output = scan_nmap(url)
-    sqlmap_output = scan_sqlmap(url)
-    gobuster_output = scan_gobuster(url)
 
-    # Generate report data with recommendations
+    # Run scans concurrently
+    with ThreadPoolExecutor() as executor:
+        future_nikto = executor.submit(scan_nikto, url)
+        future_nmap = executor.submit(scan_nmap, url)
+        future_sqlmap = executor.submit(scan_sqlmap, url)
+        future_gobuster = executor.submit(scan_gobuster, url)
+
+        nikto_output = future_nikto.result()
+        nmap_output = future_nmap.result()
+        sqlmap_output = future_sqlmap.result()
+        gobuster_output = future_gobuster.result()
+
+    # Compile report data
     report_data["Nikto"] = nikto_output + "\n\nRecommendations:\n" + get_recommendations("Nikto", nikto_output)
     report_data["Nmap"] = nmap_output + "\n\nRecommendations:\n" + get_recommendations("Nmap", nmap_output)
     report_data["SQLMap"] = sqlmap_output + "\n\nRecommendations:\n" + get_recommendations("SQLMap", sqlmap_output)
     report_data["Gobuster"] = gobuster_output + "\n\nRecommendations:\n" + get_recommendations("Gobuster", gobuster_output)
 
-    # Generate report based on format
+    # Generate report
     if report_format == "pdf":
         output_file += ".pdf"
         generate_pdf(report_data, output_file)
