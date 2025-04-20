@@ -1,4 +1,4 @@
 for pdf use
-python3 ai_web_vuln_scanner.py --url https://example.com --output scan_report --format pdf
+python3 web_vuln_scanner.py --url https://example.com --output scan_report --format pdf
 for html use
-python3 ai_web_vuln_scanner.py --url https://example.com --output scan_report --format html
+python3 web_vuln_scanner.py --url https://example.com --output scan_report --format html
