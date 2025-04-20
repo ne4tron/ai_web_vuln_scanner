@@ -1,1 +1,2 @@
 git clone https://github.com/NE4TRON/ai_web_vuln_scanner.py.git
+cd ai_web_vuln_scanner.py
