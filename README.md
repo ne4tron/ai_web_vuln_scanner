@@ -12,7 +12,7 @@ This tool automates web app penetration testing using:
 ## Usage
 
 ```bash
-python3 scanner.py --url http://example.com --format pdf --output example_report
+python3 scanner.py --url http://example.com --output scan_report --format pdf
 
 clone tool:
 git clone https://github.com/NE4TRON/ai_web_vuln_scanner.git 
