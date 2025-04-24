@@ -1,4 +1,4 @@
-# AI-Powered Web Vulnerability Scanner
+# Ne4 Web Vulnerability Scanner
 
 This tool automates web app penetration testing using:
 
